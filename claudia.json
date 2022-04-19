@@ -1,0 +1,11 @@
+{
+  "lambda": {
+    "role": "ugt-executor",
+    "name": "ugt",
+    "region": "ap-southeast-1"
+  },
+  "api": {
+    "id": "r40wyn5jsd",
+    "module": "index"
+  }
+}
