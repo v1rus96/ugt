@@ -6,7 +6,9 @@
   "scripts": {
     "create": "claudia create --region ap-southeast-1 --api-module index --policies policies --configure-db",
     "deploy": "claudia update",
-    "reconfigure": "claudia update --configure-db"
+    "reconfigure": "claudia update --configure-db",
+    "watch": "mocha --recursive -R min --watch",
+    "test": "mocha --recursive"
   },
   "keywords": [
     "ugt"
@@ -14,8 +16,10 @@
   "author": "Firuz Akhmadov",
   "license": "ISC",
   "dependencies": {
+    "assert": "^2.0.0",
     "aws-sdk": "^2.1113.0",
     "claudia-api-builder": "^4.1.2",
+    "mocha": "^10.0.0",
     "short-unique-id": "^4.4.4"
   }
 }
