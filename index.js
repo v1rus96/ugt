@@ -47,6 +47,7 @@ api.post(
         country: request.body.country,
         playtype: request.body.playtype,
         participants: [],
+        matches: [],
       },
     };
     // return dynamo result directly
@@ -68,10 +69,14 @@ api.post("/tournament/{id}/{type}/participant", async function (request) {
       ugtid: id,
       status: type,
     },
-
     UpdateExpression: "set participants = list_append(participants, :p)",
     ExpressionAttributeValues: {
-      ":p": [request.body.participant],
+      ":p": [
+        {
+          id: uid(),
+          name: request.body.name,
+        },
+      ],
     },
     ReturnValues: "UPDATED_NEW",
   };
@@ -130,6 +135,24 @@ api.get("/tournament/{id}/{type}/participants", async function (request) {
   return data.participants;
 });
 
+// get all matches of a tournament
+api.get("/tournament/{id}/{type}/matches", async function (request) {
+  "use strict";
+  var id, type, params;
+  // Get the id from the pathParams
+  id = String(request.pathParams.id);
+  type = String(request.pathParams.type);
+  params = {
+    TableName: "ugt_test",
+    Key: {
+      ugtid: id,
+      status: type,
+    },
+  };
+  let data = await dbFind(params);
+  return data.matches;
+});
+
 // reset participant list of a tournament
 api.put("/tournament/{id}/{type}/participants/reset", async function (request) {
   "use strict";
@@ -179,5 +202,240 @@ api.delete(
   },
   { success: { contentType: "text/plain" } }
 );
+
+////////////////////////////////////////////////////////////////
+// brakets
+// The number of match = num of participants -1
+// The number of rounds Math.ceil(Math.log2(num of participants))
+////////////////////////////////////////////////////////////////
+
+// create brackets
+api.post("/tournament/{id}/{type}/matches", async function (request) {
+  "use strict";
+  var id, type, params;
+  // Get the id from the pathParams
+  id = String(request.pathParams.id);
+  type = String(request.pathParams.type);
+  params = {
+    TableName: "ugt_test",
+    Key: {
+      ugtid: id,
+      status: type,
+    },
+    UpdateExpression: "set matches = :p",
+    ExpressionAttributeValues: {
+      ":p": generateBracket(request.body.size),
+    },
+    ReturnValues: "UPDATED_NEW",
+  };
+
+  let result = await dynamoDb.update(params).promise();
+});
+
+function generateBracket(number) {
+  let numOfParticipants = number;
+  let numOfMatches = numOfParticipants - 1;
+  let numOfRounds = Math.ceil(Math.log2(numOfParticipants));
+  let matchId = 0;
+  let placed = 0; // to check how many participants placed to the match
+  let bracket = [];
+  let match;
+
+  // claculate the number of matches in the round
+  // set number of participants in the round as parameter
+  let calcMatches = (numOfParticipants) => {
+    let numRoundMatches = Math.log2(numOfParticipants);
+    if (!Number.isInteger(numRoundMatches)) {
+      numRoundMatches = numOfParticipants - 2 ** Math.floor(numRoundMatches);
+    } else {
+      numRoundMatches = 2 ** (numRoundMatches - 1);
+    }
+
+    return numRoundMatches;
+  };
+
+  let numRoundMatches = calcMatches(numOfParticipants);
+  let roundParticipants = numRoundMatches * 2;
+
+  let next = numRoundMatches + 1; // next match ( numRoundMatches is the number of matches in the round)
+
+  if (numOfParticipants % 2 == 0) {
+    for (i = 0; i < roundParticipants; i++) {
+      if (i % 2 == 0) {
+        ++matchId;
+        placed += 2; // two persons are placed
+
+        if (matchId % 2 == 1 && matchId != 1) {
+          ++next;
+
+          match = {
+            id: matchId,
+            nextMatchId: next,
+            participants: [],
+            startTime: "2021-05-30",
+            state: "SCHEDULED",
+            tournamentRoundText: "1",
+          };
+          bracket.push(match);
+        } else {
+          match = {
+            id: matchId,
+            nextMatchId: next,
+            participants: [],
+            startTime: "2021-05-30",
+            state: "SCHEDULED",
+            tournamentRoundText: "1",
+          };
+          bracket.push(match);
+        }
+      }
+    }
+  } else {
+    for (i = 0; i < roundParticipants; i++) {
+      if (i % 2 == 0) {
+        ++matchId;
+        placed += 2;
+
+        if (matchId % 2 == 0) {
+          ++next;
+
+          match = {
+            id: matchId,
+            nextMatchId: next,
+            participants: [],
+            startTime: "2021-05-30",
+            state: "SCHEDULED",
+            tournamentRoundText: "1",
+          };
+          bracket.push(match);
+        } else {
+          match = {
+            id: matchId,
+            nextMatchId: next,
+            participants: [],
+            startTime: "2021-05-30",
+            state: "SCHEDULED",
+            tournamentRoundText: "1",
+          };
+          bracket.push(match);
+        }
+      }
+    }
+  }
+
+  let round = 2;
+  roundParticipants = numOfParticipants - numRoundMatches;
+  let flag = numOfParticipants % 2 == 1 ? true : false;
+
+  // 2nd round to final round
+  while (round <= numOfRounds) {
+    numRoundMatches = calcMatches(roundParticipants);
+
+    for (let i = 0; i < roundParticipants; i++) {
+      if (i % 2 === 0) {
+        ++matchId;
+
+        if (matchId % 2 == 1 && numOfParticipants % 2 == 0) {
+          ++next;
+        } else if (matchId % 2 == 0 && numOfParticipants % 2 == 1) {
+          ++next;
+        }
+
+        // if the number of participants are odd, add bracket for one
+        if (flag) {
+          match = {
+            id: matchId,
+            nextMatchId: next,
+            participants: [],
+            startTime: "2021-05-30",
+            state: "SCHEDULED",
+            tournamentRoundText: round.toString(),
+          };
+          bracket.push(match);
+
+          if (next <= numOfMatches) {
+            match = {
+              id: matchId,
+              nextMatchId: next,
+              participants: [],
+              startTime: "2021-05-30",
+              state: "SCHEDULED",
+              tournamentRoundText: round.toString(),
+            };
+            bracket.push(match);
+          } else {
+            match = {
+              id: matchId,
+              nextMatchId: null,
+              participants: [],
+              startTime: "2021-05-30",
+              state: "SCHEDULED",
+              tournamentRoundText: round.toString(),
+            };
+            bracket.push(match);
+          }
+
+          placed += 1;
+          flag = false;
+          continue;
+        }
+
+        // if there are other participants remained
+        if (placed < numOfParticipants) {
+          // check if it is final or not
+          if (next <= numOfMatches) {
+            match = {
+              id: matchId,
+              nextMatchId: next,
+              participants: [],
+              startTime: "2021-05-30",
+              state: "SCHEDULED",
+              tournamentRoundText: round.toString(),
+            };
+            bracket.push(match);
+          } else {
+            match = {
+              id: matchId,
+              nextMatchId: null,
+              participants: [],
+              startTime: "2021-05-30",
+              state: "SCHEDULED",
+              tournamentRoundText: round.toString(),
+            };
+            bracket.push(match);
+          }
+
+          placed += 2;
+        } else {
+          if (next <= numOfMatches) {
+            match = {
+              id: matchId,
+              nextMatchId: next,
+              participants: [],
+              startTime: "2021-05-30",
+              state: "SCHEDULED",
+              tournamentRoundText: round.toString(),
+            };
+            bracket.push(match);
+          } else {
+            match = {
+              id: matchId,
+              nextMatchId: "null",
+              participants: [],
+              startTime: "2021-05-30",
+              state: "SCHEDULED",
+              tournamentRoundText: round.toString(),
+            };
+            bracket.push(match);
+          }
+        }
+      }
+    }
+    ++round;
+    roundParticipants = roundParticipants - numRoundMatches;
+  }
+
+  return bracket;
+}
 
 api.addPostDeployConfig("tableName", "DynamoDB Table Name:", "configure-db");
