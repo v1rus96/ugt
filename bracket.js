@@ -1,127 +1,128 @@
-let numOfParticipants = 6;
-let numOfMatches = numOfParticipants - 1;
-let numOfRounds = Math.ceil(Math.log2(numOfParticipants));
-let matchId = 0;
-let placed = 0; // to check how many participants placed to the match
+// class Node {
+//   constructor(data) {
+//     this.left = null;
+//     this.right = null;
+//     this.data = data;
+//   }
 
-console.log("==================================");
-console.log("num of match: " + numOfMatches);
-console.log("num of rounds: " + numOfRounds);
-console.log("==================================");
+//   getData() {
+//     return this.data;
+//   }
 
-// claculate the number of matches in the round
-// set number of participants in the round as parameter
-let calcMatches = (numOfParticipants) => {
-  let numRoundMatches = Math.log2(numOfParticipants);
-  if (!Number.isInteger(numRoundMatches)) {
-    numRoundMatches = numOfParticipants - 2 ** Math.floor(numRoundMatches);
-  } else {
-    numRoundMatches = 2 ** (numRoundMatches - 1);
-  }
+//   setData(data) {
+//     this.data = data;
+//   }
+// }
 
-  return numRoundMatches;
-};
+// // build perfect tree
+// let build_tree = (height, first, stop) => {
+//   // base case
+//   if (height == stop) {
+//     return null;
+//   }
 
-let numRoundMatches = calcMatches(numOfParticipants);
-console.log("Round1: " + numRoundMatches + "matches");
-let roundParticipants = numRoundMatches * 2;
+//   // root node doesn't has next match
+//   let next = Math.floor(first / 2);
+//   if (next == 0) {
+//     next = null;
+//   }
 
-let next = numRoundMatches + 1; // next match ( numRoundMatches is the number of matches in the round)
+//   data = {
+//     id: first,
+//     nextMatchId: next,
+//     participants: [],
+//     startTime: "2021-05-30",
+//     state: "SCHEDULED",
+//     tournamentRoundText: height,
+//   };
 
-if (numOfParticipants % 2 == 0) {
-  for (i = 0; i < roundParticipants; i++) {
-    if (i % 2 == 0) {
-      ++matchId;
-      placed += 2; // two persons are placed
-      console.log("matchId: " + matchId);
-      console.log(i + "vs" + (i + 1));
+//   let root = new Node(data);
+//   bracket.push(data);
+//   if (stop != 0 && height === 2) {
+//     leaf_queue.push(root);
+//   }
+//   root.left = build_tree(height - 1, (first = first * 2), stop);
+//   root.right = build_tree(height - 1, (first = first + 1), stop);
+//   return root;
+// };
 
-      if (matchId % 2 == 1 && matchId != 1) {
-        ++next;
-        console.log("next: " + next);
-      } else {
-        console.log("next: " + next);
-      }
-    }
-  }
-} else {
-  for (i = 0; i < roundParticipants; i++) {
-    if (i % 2 == 0) {
-      ++matchId;
-      placed += 2;
-      console.log("matchId: " + matchId);
-      console.log(i + "vs" + (i + 1));
+// let numOfParticipants = 15;
+// let numOfMatches = numOfParticipants - 1;
+// let numOfRounds = Math.ceil(Math.log2(numOfParticipants));
+// let matchId = 0;
+// let placed = 0; // to check how many participants placed to the match
+// let bracket = [];
+// let leaf_queue = [];
+// let match;
+// let root;
 
-      if (matchId % 2 == 0) {
-        ++next;
-        console.log("next: " + next);
-      } else {
-        console.log("next: " + next);
-      }
-    }
-  }
-}
+// // number of node need to be added to the tree
+// let remain = numOfParticipants - 2 ** Math.floor(Math.log2(numOfParticipants));
+// let remain_queue = [];
 
-let round = 2;
-roundParticipants = numOfParticipants - numRoundMatches;
-let flag = numOfParticipants % 2 == 1 ? true : false;
+// if (remain === 0) {
+//   root = build_tree(numOfRounds, 1, 0);
+// } else {
+//   root = build_tree(numOfRounds, 1, 1);
 
-// 2nd round to final round
-while (round <= numOfRounds) {
-  numRoundMatches = calcMatches(roundParticipants);
-  console.log("\nRound" + round + ": " + numRoundMatches + "matches");
+//   for (i = 0; i < remain; i++) {
+//     if (i % 2 == 0) {
+//       let data = {
+//         id: null,
+//         nextMatchId: leaf_queue[i / 2].getData().id,
+//         participants: [],
+//         startTime: "2021-05-30",
+//         state: "SCHEDULED",
+//         tournamentRoundText: 1,
+//       };
 
-  for (let i = 0; i < roundParticipants; i++) {
-    if (i % 2 === 0) {
-      ++matchId;
+//       let node = new Node(data);
+//       if (leaf_queue[i / 2].left == null) {
+//         leaf_queue[i / 2].left = node;
+//       } else {
+//         leaf_queue[i / 2].right = node;
+//       }
 
-      if (matchId % 2 == 1 && numOfParticipants % 2 == 0) {
-        ++next;
-      } else if (matchId % 2 == 0 && numOfParticipants % 2 == 1) {
-        ++next;
-      }
+//       remain_queue.push(node);
+//     } else {
+//       let data = {
+//         id: null,
+//         nextMatchId:
+//           leaf_queue[leaf_queue.length - 1 - Math.floor(i / 2)].getData().id,
+//         participants: [],
+//         startTime: "2021-05-30",
+//         state: "SCHEDULED",
+//         tournamentRoundText: 1,
+//       };
 
-      // if the number of participants are odd, add bracket for one
-      if (flag) {
-        console.log("matchId: " + matchId);
-        console.log(placed + " vs " + "tbd");
+//       let node = new Node(data);
+//       if (leaf_queue[leaf_queue.length - 1 - Math.floor(i / 2)].left == null) {
+//         leaf_queue[leaf_queue.length - 1 - Math.floor(i / 2)].left = new Node(
+//           data
+//         );
+//       } else {
+//         leaf_queue[leaf_queue.length - 1 - Math.floor(i / 2)].right = new Node(
+//           data
+//         );
+//       }
 
-        if (next < numOfMatches) {
-          console.log("next: " + next);
-        } else {
-          console.log("next: " + "null");
-        }
+//       remain_queue.push(node);
+//     }
+//   }
 
-        placed += 1;
-        flag = false;
-        continue;
-      }
+//   // sort remain_queue by nextMatchId
+//   console.log(remain);
+//   remain_queue = remain_queue.sort((a, b) => {
+//     return a.getData().next < b.getData().next ? -1 : 1;
+//   });
 
-      // if there are other participants remained
-      if (placed < numOfParticipants) {
-        console.log("matchId: " + matchId);
-        console.log(placed + " vs " + (placed + 1));
+//   // set id to each reamined node
+//   for (i = 0; i < remain_queue.length; i++) {
+//     remain_queue[i].getData().id = remain + 1 + i;
+//     bracket.push(remain_queue[i].getData());
+//   }
+// }
 
-        // check if it is final or not
-        if (next < numOfMatches) {
-          console.log("next: " + next);
-        } else {
-          console.log("next: " + "null");
-        }
+// //console.log(root.getData());
 
-        placed += 2;
-      } else {
-        console.log("matchId: " + matchId);
-        console.log("tbd" + " vs " + "tbd");
-
-        if (next < numOfMatches) {
-          console.log("next: " + next);
-        } else {
-          console.log("next: " + "null");
-        }
-      }
-    }
-  }
-  ++round;
-  roundParticipants = roundParticipants - numRoundMatches;
-}
+// console.log(bracket);

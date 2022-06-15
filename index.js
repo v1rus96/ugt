@@ -204,9 +204,7 @@ api.delete(
 );
 
 ////////////////////////////////////////////////////////////////
-// brakets
-// The number of match = num of participants -1
-// The number of rounds Math.ceil(Math.log2(num of participants))
+// generate brackets
 ////////////////////////////////////////////////////////////////
 
 // create brackets
@@ -230,212 +228,281 @@ api.post("/tournament/{id}/{type}/matches", async function (request) {
   };
 
   let result = await dynamoDb.update(params).promise();
+  return result;
 });
 
-function generateBracket(number) {
-  let numOfParticipants = number;
-  let numOfMatches = numOfParticipants - 1;
-  let numOfRounds = Math.ceil(Math.log2(numOfParticipants));
-  let matchId = 0;
-  let placed = 0; // to check how many participants placed to the match
-  let bracket = [];
-  let match;
-
-  // claculate the number of matches in the round
-  // set number of participants in the round as parameter
-  let calcMatches = (numOfParticipants) => {
-    let numRoundMatches = Math.log2(numOfParticipants);
-    if (!Number.isInteger(numRoundMatches)) {
-      numRoundMatches = numOfParticipants - 2 ** Math.floor(numRoundMatches);
-    } else {
-      numRoundMatches = 2 ** (numRoundMatches - 1);
+let generateBracket = (number) => {
+  class Node {
+    constructor(data) {
+      this.left = null;
+      this.right = null;
+      this.data = data;
     }
 
-    return numRoundMatches;
+    getData() {
+      return this.data;
+    }
+
+    setData(data) {
+      this.data = data;
+    }
+  }
+
+  // build perfect tree
+  let build_tree = (height, first, stop) => {
+    // base case
+    if (height == stop) {
+      return null;
+    }
+
+    // root node doesn't has next match
+    let next = Math.floor(first / 2);
+    if (next == 0) {
+      next = null;
+    }
+
+    data = {
+      id: first,
+      nextMatchId: next,
+      participants: [],
+      startTime: "2021-05-30",
+      state: "SCHEDULED",
+      tournamentRoundText: height,
+    };
+
+    let root = new Node(data);
+    bracket.push(data);
+    if (stop != 0 && height === 2) {
+      leaf_queue.push(root);
+    }
+    root.left = build_tree(height - 1, (first = first * 2), stop);
+    root.right = build_tree(height - 1, (first = first + 1), stop);
+    return root;
   };
 
-  let numRoundMatches = calcMatches(numOfParticipants);
-  let roundParticipants = numRoundMatches * 2;
+  let numOfParticipants = number;
+  let numOfRounds = Math.ceil(Math.log2(numOfParticipants));
+  let bracket = [];
+  let leaf_queue = [];
 
-  let next = numRoundMatches + 1; // next match ( numRoundMatches is the number of matches in the round)
+  // number of node need to be added to the tree
+  let remain =
+    numOfParticipants - 2 ** Math.floor(Math.log2(numOfParticipants));
+  let remain_queue = [];
 
-  if (numOfParticipants % 2 == 0) {
-    for (i = 0; i < roundParticipants; i++) {
-      if (i % 2 == 0) {
-        ++matchId;
-        placed += 2; // two persons are placed
-
-        if (matchId % 2 == 1 && matchId != 1) {
-          ++next;
-
-          match = {
-            id: matchId,
-            nextMatchId: next,
-            participants: [],
-            startTime: "2021-05-30",
-            state: "SCHEDULED",
-            tournamentRoundText: "1",
-          };
-          bracket.push(match);
-        } else {
-          match = {
-            id: matchId,
-            nextMatchId: next,
-            participants: [],
-            startTime: "2021-05-30",
-            state: "SCHEDULED",
-            tournamentRoundText: "1",
-          };
-          bracket.push(match);
-        }
-      }
-    }
+  if (remain === 0) {
+    root = build_tree(numOfRounds, 1, 0);
   } else {
-    for (i = 0; i < roundParticipants; i++) {
+    root = build_tree(numOfRounds, 1, 1);
+
+    for (i = 0; i < remain; i++) {
       if (i % 2 == 0) {
-        ++matchId;
-        placed += 2;
+        let data = {
+          id: null,
+          nextMatchId: leaf_queue[i / 2].getData().id,
+          participants: [],
+          startTime: "2021-05-30",
+          state: "SCHEDULED",
+          tournamentRoundText: 1,
+        };
 
-        if (matchId % 2 == 0) {
-          ++next;
-
-          match = {
-            id: matchId,
-            nextMatchId: next,
-            participants: [],
-            startTime: "2021-05-30",
-            state: "SCHEDULED",
-            tournamentRoundText: "1",
-          };
-          bracket.push(match);
+        let node = new Node(data);
+        if (leaf_queue[i / 2].left == null) {
+          leaf_queue[i / 2].left = node;
         } else {
-          match = {
-            id: matchId,
-            nextMatchId: next,
-            participants: [],
-            startTime: "2021-05-30",
-            state: "SCHEDULED",
-            tournamentRoundText: "1",
-          };
-          bracket.push(match);
+          leaf_queue[i / 2].right = node;
         }
+
+        remain_queue.push(node);
+      } else {
+        let data = {
+          id: null,
+          nextMatchId:
+            leaf_queue[leaf_queue.length - 1 - Math.floor(i / 2)].getData().id,
+          participants: [],
+          startTime: "2021-05-30",
+          state: "SCHEDULED",
+          tournamentRoundText: 1,
+        };
+
+        let node = new Node(data);
+        if (
+          leaf_queue[leaf_queue.length - 1 - Math.floor(i / 2)].left == null
+        ) {
+          leaf_queue[leaf_queue.length - 1 - Math.floor(i / 2)].left = new Node(
+            data
+          );
+        } else {
+          leaf_queue[leaf_queue.length - 1 - Math.floor(i / 2)].right =
+            new Node(data);
+        }
+
+        remain_queue.push(node);
       }
+    }
+
+    // sort remain_queue by nextMatchId
+    console.log(remain);
+    remain_queue = remain_queue.sort((a, b) => {
+      return a.getData().next < b.getData().next ? -1 : 1;
+    });
+
+    // set id to each reamined node
+    for (i = 0; i < remain_queue.length; i++) {
+      remain_queue[i].getData().id = bracket.length + 1;
+      bracket.push(remain_queue[i].getData());
     }
   }
 
-  let round = 2;
-  roundParticipants = numOfParticipants - numRoundMatches;
-  let flag = numOfParticipants % 2 == 1 ? true : false;
-
-  // 2nd round to final round
-  while (round <= numOfRounds) {
-    numRoundMatches = calcMatches(roundParticipants);
-
-    for (let i = 0; i < roundParticipants; i++) {
-      if (i % 2 === 0) {
-        ++matchId;
-
-        if (matchId % 2 == 1 && numOfParticipants % 2 == 0) {
-          ++next;
-        } else if (matchId % 2 == 0 && numOfParticipants % 2 == 1) {
-          ++next;
-        }
-
-        // if the number of participants are odd, add bracket for one
-        if (flag) {
-          match = {
-            id: matchId,
-            nextMatchId: next,
-            participants: [],
-            startTime: "2021-05-30",
-            state: "SCHEDULED",
-            tournamentRoundText: round.toString(),
-          };
-          bracket.push(match);
-
-          if (next <= numOfMatches) {
-            match = {
-              id: matchId,
-              nextMatchId: next,
-              participants: [],
-              startTime: "2021-05-30",
-              state: "SCHEDULED",
-              tournamentRoundText: round.toString(),
-            };
-            bracket.push(match);
-          } else {
-            match = {
-              id: matchId,
-              nextMatchId: null,
-              participants: [],
-              startTime: "2021-05-30",
-              state: "SCHEDULED",
-              tournamentRoundText: round.toString(),
-            };
-            bracket.push(match);
-          }
-
-          placed += 1;
-          flag = false;
-          continue;
-        }
-
-        // if there are other participants remained
-        if (placed < numOfParticipants) {
-          // check if it is final or not
-          if (next <= numOfMatches) {
-            match = {
-              id: matchId,
-              nextMatchId: next,
-              participants: [],
-              startTime: "2021-05-30",
-              state: "SCHEDULED",
-              tournamentRoundText: round.toString(),
-            };
-            bracket.push(match);
-          } else {
-            match = {
-              id: matchId,
-              nextMatchId: null,
-              participants: [],
-              startTime: "2021-05-30",
-              state: "SCHEDULED",
-              tournamentRoundText: round.toString(),
-            };
-            bracket.push(match);
-          }
-
-          placed += 2;
-        } else {
-          if (next <= numOfMatches) {
-            match = {
-              id: matchId,
-              nextMatchId: next,
-              participants: [],
-              startTime: "2021-05-30",
-              state: "SCHEDULED",
-              tournamentRoundText: round.toString(),
-            };
-            bracket.push(match);
-          } else {
-            match = {
-              id: matchId,
-              nextMatchId: "null",
-              participants: [],
-              startTime: "2021-05-30",
-              state: "SCHEDULED",
-              tournamentRoundText: round.toString(),
-            };
-            bracket.push(match);
-          }
-        }
-      }
-    }
-    ++round;
-    roundParticipants = roundParticipants - numRoundMatches;
-  }
+  // sort bracket by id descending
+  bracket = bracket.sort((a, b) => {
+    return a.id < b.id ? 1 : -1;
+  });
 
   return bracket;
-}
+};
+
+// // get brackets
+// api.get("/tournament/{id}/{type}/initialize_matches", async function (request) {
+//   "use strict";
+//   var id, type, params;
+//   // Get the id from the pathParams
+//   id = String(request.pathParams.id);
+//   type = String(request.pathParams.type);
+//   params = {
+//     TableName: "ugt_test",
+//     Key: {
+//       ugtid: id,
+//       status: type,
+//     },
+//   };
+//   let tournament = await dynamoDb.get(params).promise();
+//   // update the matches
+//   params = {
+//     TableName: "ugt_test",
+//     Key: {
+//       ugtid: id,
+//       status: type,
+//     },
+//     UpdateExpression: "set matches = :p",
+//     ExpressionAttributeValues: {
+//       ":p": initialize_participants(
+//         tournament.Item.participants,
+//         tournament.Item.matches
+//       ),
+//     },
+//     ReturnValues: "UPDATED_NEW",
+//   };
+//   let result = await dynamoDb.update(params).promise();
+//   return result;
+// });
+
+// let initialize_participants = (participants, matches) => {
+//   let new_matches = [];
+//   for (i = 0; i < participants.length; i++) {
+//     let data = {
+//       id: participants[i].id,
+//       name: participants[i].name,
+//       score: 0,
+//       rank: null,
+//     };
+//     new_matches[i].participants.push(data);
+//   }
+//   return new_matches;
+// };
+
+// update the matches in the tournament
+api.put("/tournament/{id}/{type}/matches", async function (request) {
+  "use strict";
+  var id, type, params;
+  // Get the id from the pathParams
+  id = String(request.pathParams.id);
+  type = String(request.pathParams.type);
+  params = {
+    TableName: "ugt_test",
+    Key: {
+      ugtid: id,
+      status: type,
+    },
+    UpdateExpression: "set matches = :p",
+    ExpressionAttributeValues: {
+      ":p": request.body,
+    },
+    ReturnValues: "UPDATED_NEW",
+  };
+  let result = await dynamoDb.update(params).promise();
+  return result;
+});
+
+// shuffle participants in the tournament
+api.put(
+  "/tournament/{id}/{type}/shuffle_participants",
+  async function (request) {
+    "use strict";
+    var id, type, params;
+    // Get the id from the pathParams
+    id = String(request.pathParams.id);
+    type = String(request.pathParams.type);
+    // find the tournament
+    params = {
+      TableName: "ugt_test",
+      Key: {
+        ugtid: id,
+        status: type,
+      },
+    };
+    let tournament = await dynamoDb.get(params).promise();
+
+    // shuffle the participants
+    params = {
+      TableName: "ugt_test",
+      Key: {
+        ugtid: id,
+        status: type,
+      },
+      UpdateExpression: "set participants = :p",
+      ExpressionAttributeValues: {
+        ":p": shuffle(tournament.Item.participants),
+      },
+      ReturnValues: "UPDATED_NEW",
+    };
+    let result = await dynamoDb.update(params).promise();
+    return result;
+  }
+);
+
+let shuffle = (array) => {
+  for (let i = array.length - 1; i >= 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+};
+
+// update participants in the tournament by given array of pariticpants
+api.put(
+  "/tournament/{id}/{type}/update_participants",
+  async function (request) {
+    "use strict";
+    var id, type, params;
+    // Get the id from the pathParams
+    id = String(request.pathParams.id);
+    type = String(request.pathParams.type);
+    params = {
+      TableName: "ugt_test",
+      Key: {
+        ugtid: id,
+        status: type,
+      },
+      UpdateExpression: "set participants = :p",
+      ExpressionAttributeValues: {
+        ":p": request.body,
+      },
+      ReturnValues: "UPDATED_NEW",
+    };
+    let result = await dynamoDb.update(params).promise();
+    return result;
+  }
+);
 
 api.addPostDeployConfig("tableName", "DynamoDB Table Name:", "configure-db");
