@@ -411,6 +411,8 @@ let initialize_bracket = (matches, participants) => {
       participants[j].status = "WALK_OVER";
       firstMatches[i].participants.push(participants[j]);
 
+      // set match state to "WALK_OVER"
+      firstMatches[i].state = "WALK_OVER";
       // change walk over participant's status
       let wo = JSON.parse(JSON.stringify(participants[j]));
       wo.status = null;
