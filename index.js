@@ -75,6 +75,9 @@ api.post("/tournament/{id}/{type}/participant", async function (request) {
         {
           id: uid(),
           name: request.body.name,
+          status: null,
+          resultText: null,
+          isWinner: false,
         },
       ],
     },
@@ -203,6 +206,42 @@ api.delete(
   { success: { contentType: "text/plain" } }
 );
 
+// delete participant from tournament by participant id (update participant list)
+api.delete("/tournament/{id}/{type}/{pid}", async function (request) {
+  "use strict";
+  var id, type, params, pid;
+  // Get the id from the pathParams
+  id = String(request.pathParams.id);
+  type = String(request.pathParams.type);
+  pid = String(request.pathParams.pid);
+  params = {
+    TableName: "ugt_test",
+    Key: {
+      ugtid: id,
+      status: type,
+    },
+  };
+
+  // find participant from list
+  let data = await dbFind(params);
+  var participants = data.participants;
+  const index = participants.findIndex((p) => p.id === pid);
+  if (index === -1) return 0; // if participant not found, return 0
+
+  // update participant
+  params = {
+    TableName: "ugt_test",
+    Key: {
+      ugtid: id,
+      status: type,
+    },
+    UpdateExpression: "remove participants[" + index + "]",
+    ReturnValues: "UPDATED_NEW",
+  };
+  let result = await dynamoDb.update(params).promise();
+  return result;
+});
+
 ////////////////////////////////////////////////////////////////
 // generate brackets
 ////////////////////////////////////////////////////////////////
@@ -214,6 +253,20 @@ api.post("/tournament/{id}/{type}/matches", async function (request) {
   // Get the id from the pathParams
   id = String(request.pathParams.id);
   type = String(request.pathParams.type);
+  // find the tournament
+  // Get the id from the pathParams
+  id = String(request.pathParams.id);
+  type = String(request.pathParams.type);
+  params = {
+    TableName: "ugt_test",
+    Key: {
+      ugtid: id,
+      status: type,
+    },
+  };
+  // post-process dynamo result before returning
+  let data = await dbFind(params);
+
   params = {
     TableName: "ugt_test",
     Key: {
@@ -222,7 +275,7 @@ api.post("/tournament/{id}/{type}/matches", async function (request) {
     },
     UpdateExpression: "set matches = :p",
     ExpressionAttributeValues: {
-      ":p": generateBracket(request.body.size),
+      ":p": generateBracket_test(data.participants.length),
     },
     ReturnValues: "UPDATED_NEW",
   };
@@ -231,7 +284,7 @@ api.post("/tournament/{id}/{type}/matches", async function (request) {
   return result;
 });
 
-let generateBracket = (number) => {
+let generateBracket_test = (number) => {
   class Node {
     constructor(data) {
       this.left = null;
@@ -249,9 +302,9 @@ let generateBracket = (number) => {
   }
 
   // build perfect tree
-  let build_tree = (height, first, stop) => {
+  let build_tree = (height, first) => {
     // base case
-    if (height == stop) {
+    if (height == 0) {
       return null;
     }
 
@@ -272,144 +325,102 @@ let generateBracket = (number) => {
 
     let root = new Node(data);
     bracket.push(data);
-    if (stop != 0 && height === 2) {
-      leaf_queue.push(root);
-    }
-    root.left = build_tree(height - 1, (first = first * 2), stop);
-    root.right = build_tree(height - 1, (first = first + 1), stop);
+
+    root.left = build_tree(height - 1, (first = first * 2));
+    root.right = build_tree(height - 1, (first = first + 1));
     return root;
   };
 
   let numOfParticipants = number;
   let numOfRounds = Math.ceil(Math.log2(numOfParticipants));
   let bracket = [];
-  let leaf_queue = [];
-
-  // number of node need to be added to the tree
-  let remain =
-    numOfParticipants - 2 ** Math.floor(Math.log2(numOfParticipants));
-  let remain_queue = [];
-
-  if (remain === 0) {
-    root = build_tree(numOfRounds, 1, 0);
-  } else {
-    root = build_tree(numOfRounds, 1, 1);
-
-    for (i = 0; i < remain; i++) {
-      if (i % 2 == 0) {
-        let data = {
-          id: null,
-          nextMatchId: leaf_queue[i / 2].getData().id,
-          participants: [],
-          startTime: "2021-05-30",
-          state: "SCHEDULED",
-          tournamentRoundText: 1,
-        };
-
-        let node = new Node(data);
-        if (leaf_queue[i / 2].left == null) {
-          leaf_queue[i / 2].left = node;
-        } else {
-          leaf_queue[i / 2].right = node;
-        }
-
-        remain_queue.push(node);
-      } else {
-        let data = {
-          id: null,
-          nextMatchId:
-            leaf_queue[leaf_queue.length - 1 - Math.floor(i / 2)].getData().id,
-          participants: [],
-          startTime: "2021-05-30",
-          state: "SCHEDULED",
-          tournamentRoundText: 1,
-        };
-
-        let node = new Node(data);
-        if (
-          leaf_queue[leaf_queue.length - 1 - Math.floor(i / 2)].left == null
-        ) {
-          leaf_queue[leaf_queue.length - 1 - Math.floor(i / 2)].left = new Node(
-            data
-          );
-        } else {
-          leaf_queue[leaf_queue.length - 1 - Math.floor(i / 2)].right =
-            new Node(data);
-        }
-
-        remain_queue.push(node);
-      }
-    }
-
-    // sort remain_queue by nextMatchId
-    console.log(remain);
-    remain_queue = remain_queue.sort((a, b) => {
-      return a.getData().next < b.getData().next ? -1 : 1;
-    });
-
-    // set id to each reamined node
-    for (i = 0; i < remain_queue.length; i++) {
-      remain_queue[i].getData().id = bracket.length + 1;
-      bracket.push(remain_queue[i].getData());
-    }
-  }
+  root = build_tree(numOfRounds, 1, 0);
 
   // sort bracket by id descending
   bracket = bracket.sort((a, b) => {
-    return a.id < b.id ? 1 : -1;
+    return a.id > b.id ? 1 : -1;
   });
 
   return bracket;
 };
 
-// // get brackets
-// api.get("/tournament/{id}/{type}/initialize_matches", async function (request) {
-//   "use strict";
-//   var id, type, params;
-//   // Get the id from the pathParams
-//   id = String(request.pathParams.id);
-//   type = String(request.pathParams.type);
-//   params = {
-//     TableName: "ugt_test",
-//     Key: {
-//       ugtid: id,
-//       status: type,
-//     },
-//   };
-//   let tournament = await dynamoDb.get(params).promise();
-//   // update the matches
-//   params = {
-//     TableName: "ugt_test",
-//     Key: {
-//       ugtid: id,
-//       status: type,
-//     },
-//     UpdateExpression: "set matches = :p",
-//     ExpressionAttributeValues: {
-//       ":p": initialize_participants(
-//         tournament.Item.participants,
-//         tournament.Item.matches
-//       ),
-//     },
-//     ReturnValues: "UPDATED_NEW",
-//   };
-//   let result = await dynamoDb.update(params).promise();
-//   return result;
-// });
+// initalize the tournament
+api.put("/tournament/{id}/{type}/init", async function (request) {
+  "use strict";
+  var id, type, params;
+  // Get the id from the pathParams
+  id = String(request.pathParams.id);
+  type = String(request.pathParams.type);
 
-// let initialize_participants = (participants, matches) => {
-//   let new_matches = [];
-//   for (i = 0; i < participants.length; i++) {
-//     let data = {
-//       id: participants[i].id,
-//       name: participants[i].name,
-//       score: 0,
-//       rank: null,
-//     };
-//     new_matches[i].participants.push(data);
-//   }
-//   return new_matches;
-// };
+  params = {
+    TableName: "ugt_test",
+    Key: {
+      ugtid: id,
+      status: type,
+    },
+  };
+  // post-process dynamo result before returning
+  let data = await dbFind(params);
+
+  params = {
+    TableName: "ugt_test",
+    Key: {
+      ugtid: id,
+      status: type,
+    },
+    UpdateExpression: "set matches = :p",
+    ExpressionAttributeValues: {
+      ":p": initialize_bracket(data.matches, data.participants),
+    },
+    ReturnValues: "UPDATED_NEW",
+  };
+  let result = await dynamoDb.update(params).promise();
+  return initialize_bracket(data.matches, data.participants);
+});
+
+let initialize_bracket = (matches, participants) => {
+  let numOfMatches = matches.length;
+  let numOfRoundOne = 2 ** (Math.log2(numOfMatches + 1) - 1);
+  let firstMatches = matches.slice(numOfRoundOne - 1, numOfMatches);
+  let numOfParticipants = participants.length;
+
+  // reset all matches
+  for (m of matches) {
+    m.participants = [];
+  }
+
+  // set participants
+  for (i = 0; i < numOfParticipants; i++) {
+    if (i % 2 == 0) {
+      firstMatches[i / 2].participants.push(true);
+    } else {
+      firstMatches[
+        firstMatches.length - 1 - Math.floor(i / 2)
+      ].participants.push(true);
+    }
+  }
+
+  for (i = 0, j = 0; i < firstMatches.length; i++) {
+    if (firstMatches[i].participants.length == 2) {
+      firstMatches[i].participants = [];
+      firstMatches[i].participants.push(participants[j]);
+      firstMatches[i].participants.push(participants[j + 1]);
+      j = j + 2;
+    } else if (firstMatches[i].participants.length == 1) {
+      firstMatches[i].participants = [];
+      participants[j].status = "WALK_OVER";
+      firstMatches[i].participants.push(participants[j]);
+
+      // change walk over participant's status
+      let wo = JSON.parse(JSON.stringify(participants[j]));
+      wo.status = null;
+
+      matches[firstMatches[i].nextMatchId - 1].participants.push(wo);
+      j = j + 1;
+    }
+  }
+  return matches;
+};
 
 // update the matches in the tournament
 api.put("/tournament/{id}/{type}/matches", async function (request) {
