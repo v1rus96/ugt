@@ -156,6 +156,29 @@ api.get("/tournament/{id}/{type}/matches", async function (request) {
   return data.matches;
 });
 
+// update status of a tournament
+api.put("/tournament/{id}/{type}", async function (request) {
+  "use strict";
+  var id, type, params;
+  // Get the id from the pathParams
+  id = String(request.pathParams.id);
+  type = String(request.pathParams.type);
+  params = {
+    TableName: "ugt_test",
+    Key: {
+      ugtid: id,
+      status: type,
+    },
+    UpdateExpression: "set status = :s",
+    ExpressionAttributeValues: {
+      ":s": request.body.status,
+    },
+    ReturnValues: "UPDATED_NEW",
+  };
+  let result = await dynamoDb.update(params).promise();
+  return result;
+});
+
 // reset participant list of a tournament
 api.put("/tournament/{id}/{type}/participants/reset", async function (request) {
   "use strict";
@@ -177,6 +200,26 @@ api.put("/tournament/{id}/{type}/participants/reset", async function (request) {
   };
   let result = await dynamoDb.update(params).promise();
   return result;
+});
+
+// delte all tournament in the database
+api.delete("/tournaments", async function (request) {
+  "use strict";
+  var params = {
+    TableName: "ugt_test",
+  };
+  let data = await dbRead(params);
+  for (let i = 0; i < data.length; i++) {
+    let params = {
+      TableName: "ugt_test",
+      Key: {
+        ugtid: data[i].ugtid,
+        status: data[i].status,
+      },
+    };
+    await dynamoDb.delete(params).promise();
+  }
+  return "deleted";
 });
 
 // delete tournament with id
@@ -241,10 +284,6 @@ api.delete("/tournament/{id}/{type}/{pid}", async function (request) {
   let result = await dynamoDb.update(params).promise();
   return result;
 });
-
-////////////////////////////////////////////////////////////////
-// generate brackets
-////////////////////////////////////////////////////////////////
 
 // create brackets
 api.post("/tournament/{id}/{type}/matches", async function (request) {
@@ -389,7 +428,7 @@ let initialize_bracket = (matches, participants) => {
     m.participants = [];
   }
 
-  // set participants
+  // decide where to assign participants
   for (i = 0; i < numOfParticipants; i++) {
     if (i % 2 == 0) {
       firstMatches[i / 2].participants.push(true);
@@ -400,6 +439,7 @@ let initialize_bracket = (matches, participants) => {
     }
   }
 
+  // assign participants
   for (i = 0, j = 0; i < firstMatches.length; i++) {
     if (firstMatches[i].participants.length == 2) {
       firstMatches[i].participants = [];
@@ -424,7 +464,7 @@ let initialize_bracket = (matches, participants) => {
   return matches;
 };
 
-// update the matches in the tournament
+// update the matches in the tournament to given array of matches
 api.put("/tournament/{id}/{type}/matches", async function (request) {
   "use strict";
   var id, type, params;
