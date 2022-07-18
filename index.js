@@ -1,3 +1,10 @@
+/**
+ * TODO: Allow admin to run all APIs
+ * ? what should it return for error?
+ *  ? username and createdBy is not match
+ *  ? tournament id not found
+ */
+
 /*global require, module*/
 var ApiBuilder = require("claudia-api-builder"),
   AWS = require("aws-sdk"),
@@ -26,6 +33,34 @@ async function dbFind(params) {
   return result.Item;
 }
 
+// get id token from request and decode
+const getUsername = async (request) => {
+  const authorization = request.headers.Authorization;
+  if (authorization) {
+    const parts = authorization.split(" ");
+    if (parts.length === 2) {
+      const scheme = parts[0];
+      const credentials = parts[1];
+      if (/^Bearer$/i.test(scheme)) {
+        const userInfo = JSON.parse(
+          Buffer.from(credentials.split(".")[1], "base64")
+        );
+        const username = userInfo["cognito:username"];
+        return username;
+      }
+    }
+  }
+  return null;
+};
+
+// User Authication
+api.registerAuthorizer("MyCognitoAuth", {
+  providerARNs: [
+    //"arn:aws:cognito-idp:ap-southeast-1:464335834479:userpool/ap-southeast-1_FcsDMk53F",
+    "arn:aws:cognito-idp:ap-southeast-1:464335834479:userpool/ap-southeast-1_DlgtMn9jV",
+  ],
+});
+
 // Create new tournament
 api.post(
   "/tournament",
@@ -48,46 +83,144 @@ api.post(
         playtype: request.body.playtype,
         participants: [],
         matches: [],
+        managers: [],
       },
     };
     // return dynamo result directly
     return dynamoDb.put(params).promise();
   },
-  { success: 201 }
+  { cognitoAuthorizer: "MyCognitoAuth" }
 ); // Return HTTP status 201 - Created when successful
 
-//create new participant and add to tournament
-api.post("/tournament/{id}/{type}/participant", async function (request) {
-  "use strict";
-  var id, type, params;
-  // Get the id from the pathParams
-  id = String(request.pathParams.id);
-  type = String(request.pathParams.type);
-  var params = {
-    TableName: "ugt_test",
-    Key: {
-      ugtid: id,
-      status: type,
-    },
-    UpdateExpression: "set participants = list_append(participants, :p)",
-    ExpressionAttributeValues: {
-      ":p": [
-        {
-          id: uid(),
-          name: request.body.name,
-          status: null,
-          resultText: null,
-          isWinner: false,
-        },
-      ],
-    },
-    ReturnValues: "UPDATED_NEW",
-  };
-  let result = await dynamoDb.update(params).promise();
-  return result;
-});
+// add manager to tournament
+// ? maximum number of managers?
+api.post(
+  "/tournament/{id}/{type}/manager",
+  async function (request) {
+    ("use strict");
+    var id, type, params, name;
+    // Get the id from the pathParams
+    id = String(request.pathParams.id);
+    type = String(request.pathParams.type);
+    name = String(request.body.name);
 
-// get all tournaments
+    var params = {
+      TableName: "ugt_test",
+      Key: {
+        ugtid: id,
+        status: type,
+      },
+    };
+    let data = await dbFind(params);
+    // if tournament not found
+    if (!data) {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          message: "Tournament not found",
+        }),
+      };
+    }
+
+    // get username from request
+    var username = await getUsername(request);
+    // if username is equal to createdBy, add manager
+    // ? data structures for manager is ok?
+    if (data.createdBy === username) {
+      params = {
+        TableName: "ugt_test",
+        Key: {
+          ugtid: id,
+          status: type,
+        },
+        UpdateExpression: "set managers = list_append(managers, :m)",
+        ExpressionAttributeValues: {
+          ":m": [name],
+        },
+        ReturnValues: "UPDATED_NEW",
+      };
+      let result = await dynamoDb.update(params).promise();
+      return result;
+    } else {
+      return {
+        statusCode: 401,
+        body: JSON.stringify({
+          message: "You are not authorized to add manager to this tournament",
+        }),
+      };
+    }
+  },
+  { cognitoAuthorizer: "MyCognitoAuth" }
+);
+
+// create new participant and add to tournament
+api.post(
+  "/tournament/{id}/{type}/participant",
+  async function (request) {
+    "use strict";
+    var id, type, params;
+    // Get the id from the pathParams
+    id = String(request.pathParams.id);
+    type = String(request.pathParams.type);
+
+    params = {
+      TableName: "ugt_test",
+      Key: {
+        ugtid: id,
+        status: type,
+      },
+    };
+    let data = await dbFind(params);
+    // if tournament not found
+    if (!data) {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          message: "Tournament not found",
+        }),
+      };
+    }
+
+    // if username is equal to createdBy or, in manager list, add participant
+    const username = await getUsername(request);
+    if (data.createdBy === username || data.managers.includes(username)) {
+      params = {
+        TableName: "ugt_test",
+        Key: {
+          ugtid: id,
+          status: type,
+        },
+        UpdateExpression: "set participants = list_append(participants, :p)",
+        ExpressionAttributeValues: {
+          ":p": [
+            {
+              id: uid(),
+              name: String(request.body.name),
+              status: null,
+              resultText: null,
+              isWinner: false,
+            },
+          ],
+        },
+        ReturnValues: "UPDATED_NEW",
+      };
+      let result = await dynamoDb.update(params).promise();
+      return result;
+    } else {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          message:
+            "You are not authorized to add participant to this tournament",
+        }),
+      };
+    }
+  },
+  { cognitoAuthorizer: "MyCognitoAuth" }
+); // Return HTTP status 201 - Created when successful
+
+// get all tournaments from db
+// ? should this be exposed to public?
 api.get("/tournaments", async function (request) {
   "use strict";
   var params = {
@@ -98,6 +231,8 @@ api.get("/tournaments", async function (request) {
 });
 
 // find tournament by id
+// ? if tournament not found?
+// ? should this be exposed to public?
 api.get("/tournament/{id}/{type}", function (request) {
   "use strict";
   var id, type, params;
@@ -121,6 +256,8 @@ api.get("/tournament/{id}/{type}", function (request) {
 });
 
 // get all participants of a tournament
+// ? should this be exposed to public?
+// ? what should it return if tournament not found?
 api.get("/tournament/{id}/{type}/participants", async function (request) {
   "use strict";
   var id, type, params;
@@ -135,10 +272,21 @@ api.get("/tournament/{id}/{type}/participants", async function (request) {
     },
   };
   let data = await dbFind(params);
+  // if tournament not found
+  if (!data) {
+    return {
+      statusCode: 404,
+      body: JSON.stringify({
+        message: "Tournament not found",
+      }),
+    };
+  }
   return data.participants;
 });
 
 // get all matches of a tournament
+// ? shoule this be exposed to public?
+// ? what should it return if tournament not found?
 api.get("/tournament/{id}/{type}/matches", async function (request) {
   "use strict";
   var id, type, params;
@@ -153,76 +301,163 @@ api.get("/tournament/{id}/{type}/matches", async function (request) {
     },
   };
   let data = await dbFind(params);
+  // if tournament not found
+  if (!data) {
+    return {
+      statusCode: 404,
+      body: JSON.stringify({
+        message: "Tournament not found",
+      }),
+    };
+  }
   return data.matches;
 });
 
 // update status of a tournament
-api.put("/tournament/{id}/{type}", async function (request) {
-  "use strict";
-  var id, type, params;
-  // Get the id from the pathParams
-  id = String(request.pathParams.id);
-  type = String(request.pathParams.type);
-  params = {
-    TableName: "ugt_test",
-    Key: {
-      ugtid: id,
-      status: type,
-    },
-    UpdateExpression: "set status = :s",
-    ExpressionAttributeValues: {
-      ":s": request.body.status,
-    },
-    ReturnValues: "UPDATED_NEW",
-  };
-  let result = await dynamoDb.update(params).promise();
-  return result;
-});
-
-// reset participant list of a tournament
-api.put("/tournament/{id}/{type}/participants/reset", async function (request) {
-  "use strict";
-  var id, type, params;
-  // Get the id from the pathParams
-  id = String(request.pathParams.id);
-  type = String(request.pathParams.type);
-  params = {
-    TableName: "ugt_test",
-    Key: {
-      ugtid: id,
-      status: type,
-    },
-    UpdateExpression: "set participants = :p",
-    ExpressionAttributeValues: {
-      ":p": [],
-    },
-    ReturnValues: "UPDATED_NEW",
-  };
-  let result = await dynamoDb.update(params).promise();
-  return result;
-});
-
-// delte all tournament in the database
-api.delete("/tournaments", async function (request) {
-  "use strict";
-  var params = {
-    TableName: "ugt_test",
-  };
-  let data = await dbRead(params);
-  for (let i = 0; i < data.length; i++) {
-    let params = {
+// ? what should it return if tournament not found?
+api.put(
+  "/tournament/{id}/{type}",
+  async function (request) {
+    "use strict";
+    var id, type, params;
+    // Get the id from the pathParams
+    id = String(request.pathParams.id);
+    type = String(request.pathParams.type);
+    // get username from cognito
+    const username = await getUsername(request);
+    // get tournament from db
+    params = {
       TableName: "ugt_test",
       Key: {
-        ugtid: data[i].ugtid,
-        status: data[i].status,
+        ugtid: id,
+        status: type,
       },
     };
-    await dynamoDb.delete(params).promise();
-  }
-  return "deleted";
-});
+    let data = await dbFind(params);
+    // if tournament not found
+    if (!data) {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          message: "Tournament not found",
+        }),
+      };
+    }
+    // if username is equal to createdBy or in manager list, update status
+    if (data.createdBy === username || data.managers.includes(username)) {
+      params = {
+        TableName: "ugt_test",
+        Key: {
+          ugtid: id,
+          status: type,
+        },
+        UpdateExpression: "set status = :s",
+        ExpressionAttributeValues: {
+          ":s": request.body.status,
+        },
+        ReturnValues: "UPDATED_NEW",
+      };
+      let result = await dynamoDb.update(params).promise();
+      return result;
+    } else {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          message: "You are not authorized to update status of this tournament",
+        }),
+      };
+    }
+  },
+  { cognitoAuthorizer: "MyCognitoAuth" }
+);
+
+// reset participant list of a tournament
+api.put(
+  "/tournament/{id}/{type}/participants/reset",
+  async function (request) {
+    "use strict";
+    var id, type, params;
+    // Get the id from the pathParams
+    id = String(request.pathParams.id);
+    type = String(request.pathParams.type);
+
+    // get tournament from db
+    params = {
+      TableName: "ugt_test",
+      Key: {
+        ugtid: id,
+        status: type,
+      },
+    };
+    let data = await dbFind(params);
+    // if tournament not found
+    if (!data) {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          message: "Tournament not found",
+        }),
+      };
+    }
+    // get username from cognito
+    const username = await getUsername(request);
+    // if username is equal to createdBy or in manager list, update status
+    if (data.createdBy === username || data.managers.includes(username)) {
+      params = {
+        TableName: "ugt_test",
+        Key: {
+          ugtid: id,
+          status: type,
+        },
+        UpdateExpression: "set participants = :p",
+        ExpressionAttributeValues: {
+          ":p": [],
+        },
+        ReturnValues: "UPDATED_NEW",
+      };
+      let result = await dynamoDb.update(params).promise();
+      return result;
+    } else {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          message:
+            "You are not authorized to reset participant list of this tournament",
+        }),
+      };
+    }
+  },
+  { cognitoAuthorizer: "MyCognitoAuth" }
+);
+
+// delete all tournament in the database
+// TODO: add authorization so that only the ADMIN can delete it
+// ! this will delete all tournaments in the database
+// api.delete(
+//   "/tournaments",
+//   async function (request) {
+//     "use strict";
+//     var params = {
+//       TableName: "ugt_test",
+//     };
+//     let data = await dbRead(params);
+//     for (let i = 0; i < data.length; i++) {
+//       let params = {
+//         TableName: "ugt_test",
+//         Key: {
+//           ugtid: data[i].ugtid,
+//           status: data[i].status,
+//         },
+//       };
+//       await dynamoDb.delete(params).promise();
+//     }
+//     return "deleted";
+//   },
+//   { cognitoAuthorizer: "MyCognitoAuth" }
+// );
 
 // delete tournament with id
+// ? what should it return if tournament not found?
 api.delete(
   "/tournament/{id}/{type}",
   function (request) {
@@ -238,92 +473,118 @@ api.delete(
         status: type,
       },
     };
-    // return a completely different result when dynamo completes
-    return dynamoDb
-      .delete(params)
-      .promise()
-      .then(function () {
-        return 'Deleted tournament with ugtid "' + id + '"';
-      });
+
+    // find participant from list
+    let data = dbFind(params); // ? await dbFind(params) doesnt work
+    // ? if I not use await, this will not be checked before cheking username
+    // if tournament not found
+    // if (!data) {
+    //   return {
+    //     statusCode: 404,
+    //     body: JSON.stringify({
+    //       message: "Tournament not found",
+    //     }),
+    //   };
+    // }
+
+    // get username from cognito
+    const username = getUsername(request);
+    // if username is equal to createdBy , delete tournament
+    if (data.createdBy === username) {
+      // return a completely different result when dynamo completes
+      return dynamoDb
+        .delete(params)
+        .promise()
+        .then(function () {
+          return 'Deleted tournament with ugtid "' + id + '"';
+        });
+    } else {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          message: "You are not authorized to delete this tournament",
+        }),
+      };
+    }
   },
-  { success: { contentType: "text/plain" } }
+  { cognitoAuthorizer: "MyCognitoAuth" }
 );
 
 // delete participant from tournament by participant id (update participant list)
-api.delete("/tournament/{id}/{type}/{pid}", async function (request) {
-  "use strict";
-  var id, type, params, pid;
-  // Get the id from the pathParams
-  id = String(request.pathParams.id);
-  type = String(request.pathParams.type);
-  pid = String(request.pathParams.pid);
-  params = {
-    TableName: "ugt_test",
-    Key: {
-      ugtid: id,
-      status: type,
-    },
-  };
+// ? what should it return if tournament not found?
+// ? what should it return if participant not found?
+api.delete(
+  "/tournament/{id}/{type}/{pid}",
+  async function (request) {
+    "use strict";
+    var id, type, params, pid;
+    // Get the id from the pathParams
+    id = String(request.pathParams.id);
+    type = String(request.pathParams.type);
+    pid = String(request.pathParams.pid);
+    params = {
+      TableName: "ugt_test",
+      Key: {
+        ugtid: id,
+        status: type,
+      },
+    };
 
-  // find participant from list
-  let data = await dbFind(params);
-  var participants = data.participants;
-  const index = participants.findIndex((p) => p.id === pid);
-  if (index === -1) return 0; // if participant not found, return 0
+    // get tournament from db by ugtid
+    let data = await dbFind(params);
+    // if tournament not found
+    if (!data) {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          message: "Tournament not found",
+        }),
+      };
+    }
 
-  // update participant
-  params = {
-    TableName: "ugt_test",
-    Key: {
-      ugtid: id,
-      status: type,
-    },
-    UpdateExpression: "remove participants[" + index + "]",
-    ReturnValues: "UPDATED_NEW",
-  };
-  let result = await dynamoDb.update(params).promise();
-  return result;
-});
+    // get username from cognito
+    const username = await getUsername(request);
+    // if username is equal to createdBy or in manager list, update status
+    if (data.createdBy === username || data.managers.includes(username)) {
+      // find participant from list
+      var participants = data.participants;
+      const index = participants.findIndex((p) => p.id === pid);
+      // if participant not found
+      if (index === -1)
+        return {
+          statusCode: 404,
+          body: JSON.stringify({
+            message: "Participant not found",
+          }),
+        };
+      // update participant
+      params = {
+        TableName: "ugt_test",
+        Key: {
+          ugtid: id,
+          status: type,
+        },
+        UpdateExpression: "remove participants[" + index + "]",
+        ReturnValues: "UPDATED_NEW",
+      };
+      let result = await dynamoDb.update(params).promise();
+      return result;
+    } else {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          message: "You are not authorized to delete participant",
+        }),
+      };
+    }
+  },
+  { cognitoAuthorizer: "MyCognitoAuth" }
+);
+/*################################################
+                BRACKET APIs
+##############################################*/
 
-// create brackets
-api.post("/tournament/{id}/{type}/matches", async function (request) {
-  "use strict";
-  var id, type, params;
-  // Get the id from the pathParams
-  id = String(request.pathParams.id);
-  type = String(request.pathParams.type);
-  // find the tournament
-  // Get the id from the pathParams
-  id = String(request.pathParams.id);
-  type = String(request.pathParams.type);
-  params = {
-    TableName: "ugt_test",
-    Key: {
-      ugtid: id,
-      status: type,
-    },
-  };
-  // post-process dynamo result before returning
-  let data = await dbFind(params);
-
-  params = {
-    TableName: "ugt_test",
-    Key: {
-      ugtid: id,
-      status: type,
-    },
-    UpdateExpression: "set matches = :p",
-    ExpressionAttributeValues: {
-      ":p": generateBracket_test(data.participants.length),
-    },
-    ReturnValues: "UPDATED_NEW",
-  };
-
-  let result = await dynamoDb.update(params).promise();
-  return result;
-});
-
-let generateBracket_test = (number) => {
+let generateBracket = (number) => {
   class Node {
     constructor(data) {
       this.left = null;
@@ -383,40 +644,6 @@ let generateBracket_test = (number) => {
   return bracket;
 };
 
-// initalize the tournament
-api.put("/tournament/{id}/{type}/init", async function (request) {
-  "use strict";
-  var id, type, params;
-  // Get the id from the pathParams
-  id = String(request.pathParams.id);
-  type = String(request.pathParams.type);
-
-  params = {
-    TableName: "ugt_test",
-    Key: {
-      ugtid: id,
-      status: type,
-    },
-  };
-  // post-process dynamo result before returning
-  let data = await dbFind(params);
-
-  params = {
-    TableName: "ugt_test",
-    Key: {
-      ugtid: id,
-      status: type,
-    },
-    UpdateExpression: "set matches = :p",
-    ExpressionAttributeValues: {
-      ":p": initialize_bracket(data.matches, data.participants),
-    },
-    ReturnValues: "UPDATED_NEW",
-  };
-  let result = await dynamoDb.update(params).promise();
-  return initialize_bracket(data.matches, data.participants);
-});
-
 let initialize_bracket = (matches, participants) => {
   let numOfMatches = matches.length;
   let numOfRoundOne = 2 ** (Math.log2(numOfMatches + 1) - 1);
@@ -464,30 +691,199 @@ let initialize_bracket = (matches, participants) => {
   return matches;
 };
 
+// shuffle array
+let shuffle = (array) => {
+  for (let i = array.length - 1; i >= 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+};
+
+// create brackets
+// ? what should it return if tournamnet is not found
+api.post(
+  "/tournament/{id}/{type}/matches",
+  async function (request) {
+    "use strict";
+    var id, type, params;
+    // Get the id from the pathParams
+    id = String(request.pathParams.id);
+    type = String(request.pathParams.type);
+
+    // find the tournament
+    params = {
+      TableName: "ugt_test",
+      Key: {
+        ugtid: id,
+        status: type,
+      },
+    };
+    // post-process dynamo result before returning
+    let data = await dbFind(params);
+    // if tournament not found
+    if (!data) {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          message: "Tournament not found",
+        }),
+      };
+    }
+    // get username from cognito
+    const username = await getUsername(request);
+    // if username is equal to createdBy or in manager list, update status
+    if (data.createdBy === username || data.managers.includes(username)) {
+      params = {
+        TableName: "ugt_test",
+        Key: {
+          ugtid: id,
+          status: type,
+        },
+        UpdateExpression: "set matches = :p",
+        ExpressionAttributeValues: {
+          ":p": generateBracket(data.participants.length),
+        },
+        ReturnValues: "UPDATED_NEW",
+      };
+
+      let result = await dynamoDb.update(params).promise();
+      return result;
+    } else {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          message:
+            "You are not authorized to create brackets for this tournament",
+        }),
+      };
+    }
+  },
+  { cognitoAuthorizer: "MyCognitoAuth" }
+);
+
+// initalize the tournament
+// ? what should it return if tournamnet is not found
+api.put(
+  "/tournament/{id}/{type}/init",
+  async function (request) {
+    "use strict";
+    var id, type, params;
+    // Get the id from the pathParams
+    id = String(request.pathParams.id);
+    type = String(request.pathParams.type);
+
+    params = {
+      TableName: "ugt_test",
+      Key: {
+        ugtid: id,
+        status: type,
+      },
+    };
+    // post-process dynamo result before returning
+    let data = await dbFind(params);
+    // if tournament not found
+    if (!data) {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          message: "Tournament not found",
+        }),
+      };
+    }
+    // get username from cognito
+    const username = await getUsername(request);
+
+    // if username is equal to createdBy or in manager list, update status
+    if (data.createdBy === username || data.managers.includes(username)) {
+      params = {
+        TableName: "ugt_test",
+        Key: {
+          ugtid: id,
+          status: type,
+        },
+        UpdateExpression: "set matches = :p",
+        ExpressionAttributeValues: {
+          ":p": initialize_bracket(data.matches, data.participants),
+        },
+        ReturnValues: "UPDATED_NEW",
+      };
+      let result = await dynamoDb.update(params).promise();
+      return result;
+    } else {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          message: "You are not authorized to initialize this tournament",
+        }),
+      };
+    }
+  },
+  { cognitoAuthorizer: "MyCognitoAuth" }
+);
+
 // update the matches in the tournament to given array of matches
-api.put("/tournament/{id}/{type}/matches", async function (request) {
-  "use strict";
-  var id, type, params;
-  // Get the id from the pathParams
-  id = String(request.pathParams.id);
-  type = String(request.pathParams.type);
-  params = {
-    TableName: "ugt_test",
-    Key: {
-      ugtid: id,
-      status: type,
-    },
-    UpdateExpression: "set matches = :p",
-    ExpressionAttributeValues: {
-      ":p": request.body,
-    },
-    ReturnValues: "UPDATED_NEW",
-  };
-  let result = await dynamoDb.update(params).promise();
-  return result;
-});
+// ? what should it return if tournamnet is not found
+api.put(
+  "/tournament/{id}/{type}/matches",
+  async function (request) {
+    "use strict";
+    var id, type, params;
+    // Get the id from the pathParams
+    id = String(request.pathParams.id);
+    type = String(request.pathParams.type);
+
+    // find the tournament
+    params = {
+      TableName: "ugt_test",
+      Key: {
+        ugtid: id,
+        status: type,
+      },
+    };
+    // post-process dynamo result before returning
+    let data = await dbFind(params);
+    // if tournament not found
+    if (!data) {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          message: "Tournament not found",
+        }),
+      };
+    }
+    // get username from request
+    const username = await getUsername(request);
+    // if username is equal to createdBy or in manager list, update status
+    if (data.createdBy === username || data.managers.includes(username)) {
+      params = {
+        TableName: "ugt_test",
+        Key: {
+          ugtid: id,
+          status: type,
+        },
+        UpdateExpression: "set matches = :p",
+        ExpressionAttributeValues: {
+          ":p": request.body,
+        },
+        ReturnValues: "UPDATED_NEW",
+      };
+      let result = await dynamoDb.update(params).promise();
+      return result;
+    } else {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          message: "You are not authorized to update this tournament",
+        }),
+      };
+    }
+  },
+  { cognitoAuthorizer: "MyCognitoAuth" }
+);
 
 // shuffle participants in the tournament
+// ? what should it return if tournamnet is not found
 api.put(
   "/tournament/{id}/{type}/shuffle_participants",
   async function (request) {
@@ -504,35 +900,50 @@ api.put(
         status: type,
       },
     };
-    let tournament = await dynamoDb.get(params).promise();
+    let data = await dbFind(params);
+    // if tournament not found
+    if (!data) {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          message: "Tournament not found",
+        }),
+      };
+    }
 
-    // shuffle the participants
-    params = {
-      TableName: "ugt_test",
-      Key: {
-        ugtid: id,
-        status: type,
-      },
-      UpdateExpression: "set participants = :p",
-      ExpressionAttributeValues: {
-        ":p": shuffle(tournament.Item.participants),
-      },
-      ReturnValues: "UPDATED_NEW",
-    };
-    let result = await dynamoDb.update(params).promise();
-    return result;
-  }
+    // get username from cognito
+    const username = await getUsername(request);
+    // if username is equal to createdBy or in manager list, update status
+    if (data.createdBy === username || data.managers.includes(username)) {
+      // shuffle the participants
+      params = {
+        TableName: "ugt_test",
+        Key: {
+          ugtid: id,
+          status: type,
+        },
+        UpdateExpression: "set participants = :p",
+        ExpressionAttributeValues: {
+          ":p": shuffle(tournament.Item.participants),
+        },
+        ReturnValues: "UPDATED_NEW",
+      };
+      let result = await dynamoDb.update(params).promise();
+      return result;
+    } else {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          message: "You are not authorized to shuffle this tournament",
+        }),
+      };
+    }
+  },
+  { cognitoAuthorizer: "MyCognitoAuth" }
 );
 
-let shuffle = (array) => {
-  for (let i = array.length - 1; i >= 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
-  }
-  return array;
-};
-
 // update participants in the tournament by given array of pariticpants
+// ? what should it return if tournamnet is not found
 api.put(
   "/tournament/{id}/{type}/update_participants",
   async function (request) {
@@ -541,21 +952,54 @@ api.put(
     // Get the id from the pathParams
     id = String(request.pathParams.id);
     type = String(request.pathParams.type);
+    // find the tournament
     params = {
       TableName: "ugt_test",
       Key: {
         ugtid: id,
         status: type,
       },
-      UpdateExpression: "set participants = :p",
-      ExpressionAttributeValues: {
-        ":p": request.body,
-      },
-      ReturnValues: "UPDATED_NEW",
     };
-    let result = await dynamoDb.update(params).promise();
-    return result;
-  }
+    let data = await dbFind(params);
+    // if tournament not found
+    if (!data) {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          message: "Tournament not found",
+        }),
+      };
+    }
+
+    // get username from cognito
+    const username = await getUsername(request);
+    // if username is equal to createdBy or in manager list, update status
+    if (data.createdBy === username || data.managers.includes(username)) {
+      params = {
+        TableName: "ugt_test",
+        Key: {
+          ugtid: id,
+          status: type,
+        },
+        UpdateExpression: "set participants = :p",
+        ExpressionAttributeValues: {
+          ":p": request.body,
+        },
+        ReturnValues: "UPDATED_NEW",
+      };
+      let result = await dynamoDb.update(params).promise();
+      return result;
+    } else {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          message:
+            "You are not authorized to update participants of this tournament",
+        }),
+      };
+    }
+  },
+  { cognitoAuthorizer: "MyCognitoAuth" }
 );
 
 api.addPostDeployConfig("tableName", "DynamoDB Table Name:", "configure-db");
