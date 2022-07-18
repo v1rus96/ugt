@@ -284,6 +284,35 @@ api.get("/tournament/{id}/{type}/participants", async function (request) {
   return data.participants;
 });
 
+// get all managers of a tournament
+// ? should this be exposed to public?
+// ? what should it return if tournament not found?
+api.get("/tournament/{id}/{type}/managers", async function (request) {
+  "use strict";
+  var id, type, params;
+  // Get the id from the pathParams
+  id = String(request.pathParams.id);
+  type = String(request.pathParams.type);
+  params = {
+    TableName: "ugt_test",
+    Key: {
+      ugtid: id,
+      status: type,
+    },
+  };
+  let data = await dbFind(params);
+  // if tournament not found
+  if (!data) {
+    return {
+      statusCode: 404,
+      body: JSON.stringify({
+        message: "Tournament not found",
+      }),
+    };
+  }
+  return data.managers;
+});
+
 // get all matches of a tournament
 // ? shoule this be exposed to public?
 // ? what should it return if tournament not found?
@@ -323,7 +352,7 @@ api.put(
     // Get the id from the pathParams
     id = String(request.pathParams.id);
     type = String(request.pathParams.type);
-    // get username from cognito
+    // get username from request
     const username = await getUsername(request);
     // get tournament from db
     params = {
@@ -399,7 +428,7 @@ api.put(
         }),
       };
     }
-    // get username from cognito
+    // get username from request
     const username = await getUsername(request);
     // if username is equal to createdBy or in manager list, update status
     if (data.createdBy === username || data.managers.includes(username)) {
@@ -487,7 +516,7 @@ api.delete(
     //   };
     // }
 
-    // get username from cognito
+    // get username from request
     const username = getUsername(request);
     // if username is equal to createdBy , delete tournament
     if (data.createdBy === username) {
@@ -510,6 +539,76 @@ api.delete(
   { cognitoAuthorizer: "MyCognitoAuth" }
 );
 
+// delete a manager from a tournament by manager id
+// ? what should it return if tournament not found?
+api.delete(
+  "/tournament/{id}/{type}/manager/{manager_name}",
+  async function (request) {
+    "use strict";
+    var id, type, params, manager_name;
+    // Get the id from the pathParams
+    id = String(request.pathParams.id);
+    type = String(request.pathParams.type);
+    manager_name = String(request.pathParams.manager_name);
+    params = {
+      TableName: "ugt_test",
+      Key: {
+        ugtid: id,
+        status: type,
+      },
+    };
+
+    // get tournament from db by ugtid
+    let data = await dbFind(params);
+    // if tournament not found
+    if (!data) {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          message: "Tournament not found",
+        }),
+      };
+    }
+
+    // get username from request
+    const username = await getUsername(request);
+    // if username is equal to createdBy or in manager list, update status
+    if (data.createdBy === username || data.managers.includes(username)) {
+      // find participant from list
+      var managers = data.managers;
+      const index = managers.findIndex((m) => m === manager_name);
+      // if participant not found
+      if (index === -1)
+        return {
+          statusCode: 404,
+          body: JSON.stringify({
+            message: "Participant not found",
+          }),
+        };
+      // update participant
+      params = {
+        TableName: "ugt_test",
+        Key: {
+          ugtid: id,
+          status: type,
+        },
+        UpdateExpression: "remove managers[" + index + "]",
+        ReturnValues: "UPDATED_NEW",
+      };
+      let result = await dynamoDb.update(params).promise();
+      return result;
+    } else {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          message:
+            "You are not authorized to delete manager from this tournament",
+        }),
+      };
+    }
+  },
+  { cognitoAuthorizer: "MyCognitoAuth" }
+);
 // delete participant from tournament by participant id (update participant list)
 // ? what should it return if tournament not found?
 // ? what should it return if participant not found?
@@ -542,7 +641,7 @@ api.delete(
       };
     }
 
-    // get username from cognito
+    // get username from request
     const username = await getUsername(request);
     // if username is equal to createdBy or in manager list, update status
     if (data.createdBy === username || data.managers.includes(username)) {
@@ -730,7 +829,7 @@ api.post(
         }),
       };
     }
-    // get username from cognito
+    // get username from request
     const username = await getUsername(request);
     // if username is equal to createdBy or in manager list, update status
     if (data.createdBy === username || data.managers.includes(username)) {
@@ -791,7 +890,7 @@ api.put(
         }),
       };
     }
-    // get username from cognito
+    // get username from request
     const username = await getUsername(request);
 
     // if username is equal to createdBy or in manager list, update status
@@ -911,7 +1010,7 @@ api.put(
       };
     }
 
-    // get username from cognito
+    // get username from request
     const username = await getUsername(request);
     // if username is equal to createdBy or in manager list, update status
     if (data.createdBy === username || data.managers.includes(username)) {
@@ -971,7 +1070,7 @@ api.put(
       };
     }
 
-    // get username from cognito
+    // get username from request
     const username = await getUsername(request);
     // if username is equal to createdBy or in manager list, update status
     if (data.createdBy === username || data.managers.includes(username)) {
