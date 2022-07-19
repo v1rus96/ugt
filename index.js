@@ -66,6 +66,8 @@ api.post(
   "/tournament",
   function (request) {
     "use strict";
+    // get id token from request and decode
+    const username = getUsername(request);
     var params = {
       TableName: "ugt_test",
       Item: {
@@ -77,7 +79,7 @@ api.post(
         endDate: request.body.endDate,
         registrationDate: request.body.registrationDate,
         imgUrl: request.body.imgUrl,
-        createdBy: request.body.createdBy,
+        createdBy: username,
         device: request.body.device,
         country: request.body.country,
         playtype: request.body.playtype,
