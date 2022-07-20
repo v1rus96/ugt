@@ -62,37 +62,33 @@ api.registerAuthorizer("MyCognitoAuth", {
 });
 
 // Create new tournament
-api.post(
-  "/tournament",
-  function (request) {
-    "use strict";
-    // get id token from request and decode
-    const username = getUsername(request);
-    var params = {
-      TableName: "ugt_test",
-      Item: {
-        ugtid: uid(),
-        title: request.body.title,
-        status: request.body.status,
-        game: request.body.game,
-        startDate: request.body.startDate,
-        endDate: request.body.endDate,
-        registrationDate: request.body.registrationDate,
-        imgUrl: request.body.imgUrl,
-        createdBy: username,
-        device: request.body.device,
-        country: request.body.country,
-        playtype: request.body.playtype,
-        participants: [],
-        matches: [],
-        managers: [],
-      },
-    };
-    // return dynamo result directly
-    return dynamoDb.put(params).promise();
-  },
-  { cognitoAuthorizer: "MyCognitoAuth" }
-); // Return HTTP status 201 - Created when successful
+api.post("/tournament", async function (request) {
+  "use strict";
+  // get id token from request and decode
+  var params = {
+    TableName: "ugt_test",
+    Item: {
+      ugtid: uid(),
+      title: request.body.title,
+      status: request.body.status,
+      game: request.body.game,
+      startDate: request.body.startDate,
+      endDate: request.body.endDate,
+      registrationDate: request.body.registrationDate,
+      imgUrl: request.body.imgUrl,
+      createdBy: request.body.createdBy,
+      device: request.body.device,
+      country: request.body.country,
+      playtype: request.body.playtype,
+      participants: [],
+      matches: [],
+      managers: [],
+    },
+  };
+  // return dynamo result directly
+  let result = await dynamoDb.put(params).promise();
+  return params.Item;
+}); // Return HTTP status 201 - Created when successful
 
 // add manager to tournament
 // ? maximum number of managers?
@@ -235,7 +231,7 @@ api.get("/tournaments", async function (request) {
 // find tournament by id
 // ? if tournament not found?
 // ? should this be exposed to public?
-api.get("/tournament/{id}/{type}", function (request) {
+api.get("/tournament/{id}/{type}", async function (request) {
   "use strict";
   var id, type, params;
   // Get the id from the pathParams
@@ -491,7 +487,7 @@ api.put(
 // ? what should it return if tournament not found?
 api.delete(
   "/tournament/{id}/{type}",
-  function (request) {
+  async function (request) {
     "use strict";
     var id, type, params;
     // Get the id from the pathParams
