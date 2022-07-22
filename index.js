@@ -1090,7 +1090,7 @@ api.put("/tournament/{id}/{type}/set_next_match", async function (request) {
   // traverse matchs and if match is the same as the given match,set  the next match
   for (let i = 0; i < tournament.matches.length; i++) {
     if (tournament.matches[i].id === match.id) {
-      // if after next match is not DONE and not WALK_OVER, set next match
+      // if after next match is not DONE and not WALK_OVER, edit match
       if (
         Math.floor(i / 2) <= 1 ||
         tournament.matches[Math.floor(i / 4) - 1].state == "SCHEDULED" // ? == or ===
@@ -1113,7 +1113,7 @@ api.put("/tournament/{id}/{type}/set_next_match", async function (request) {
           p1.isWinner = false;
           p2.isWinner = true;
         }
-        // if nextMatchId is not null, set next match status to PLAYED
+        // if nextMatchId is not null, set participant to next match
         // if next match already set one of the participant from the match, delete it and change to the correct winner
         if (match.nextMatchId != null) {
           // if p1 or p2 is in the participant of next match, delete it
