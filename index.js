@@ -1091,8 +1091,9 @@ api.put("/tournament/{id}/{type}/set_next_match", async function (request) {
   for (let i = 0; i < tournament.matches.length; i++) {
     if (tournament.matches[i].id === match.id) {
       // if after next match is not DONE and not WALK_OVER, edit match
+      // Math.floor((i + 1) / 2) <= 1 ... matchId1,2,3 are always editable because there is no next-next match.
       if (
-        Math.floor(i / 2) <= 1 ||
+        Math.floor((i + 1) / 2) <= 1 ||
         tournament.matches[Math.floor(i / 4) - 1].state == "SCHEDULED" // ? == or ===
       ) {
         // set match state to DONE
