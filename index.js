@@ -71,15 +71,19 @@ api.post("/tournament", async function (request) {
       ugtid: uid(),
       title: request.body.title,
       status: request.body.status,
-      game: request.body.game,
+      game: request.body.game, // ?
+      tournamentDetail: request.body.tournamentDetail, // ?
+      prizeDetail: request.body.prizeDetail, // ?
       startDate: request.body.startDate,
       endDate: request.body.endDate,
       registrationDate: request.body.registrationDate,
+      timeZone: request.body.timeZone,
       imgUrl: request.body.imgUrl,
       createdBy: request.body.createdBy,
       device: request.body.device,
       country: request.body.country,
       playtype: request.body.playtype,
+      isListed: request.body.isListed, // ?
       participants: [],
       matches: [],
       managers: [],
@@ -119,10 +123,10 @@ api.post("/tournament/{id}/{type}/manager", async function (request) {
   }
 
   // get username from request
-  var username = await getUsername(request);
+  //const username = await getUsername(request);
   // if username is equal to createdBy, add manager
   // ? data structures for manager is ok?
-  if (data.createdBy === username) {
+  if (true || data.createdBy === username) {
     params = {
       TableName: "ugt_test",
       Key: {
@@ -174,8 +178,8 @@ api.post("/tournament/{id}/{type}/participant", async function (request) {
   }
 
   // if username is equal to createdBy or, in manager list, add participant
-  const username = await getUsername(request);
-  if (data.createdBy === username || data.managers.includes(username)) {
+  // const username = await getUsername(request);
+  if (true || data.createdBy === username || data.managers.includes(username)) {
     params = {
       TableName: "ugt_test",
       Key: {
@@ -188,9 +192,16 @@ api.post("/tournament/{id}/{type}/participant", async function (request) {
           {
             id: uid(),
             name: String(request.body.name),
-            status: null,
+            status: "PENDING",
             resultText: null,
             isWinner: false,
+            isCheckedIn: false,
+            players: [
+              {
+                id: uid(),
+                name: String(request.body.name),
+              },
+            ],
           },
         ],
       },
@@ -242,6 +253,20 @@ api.get("/tournament/{id}/{type}", async function (request) {
     .then(function (response) {
       return response.Item;
     });
+});
+
+// get all tournaments its isListed is true
+api.get("/tournaments/listed", async function (request) {
+  "use strict";
+  var params = {
+    TableName: "ugt_test",
+    FilterExpression: "isListed = :isListed",
+    ExpressionAttributeValues: {
+      ":isListed": true,
+    },
+  };
+  let data = await dbRead(params);
+  return data;
 });
 
 // get all participants of a tournament
@@ -340,7 +365,7 @@ api.put("/tournament/{id}/{type}", async function (request) {
   id = String(request.pathParams.id);
   type = String(request.pathParams.type);
   // get username from request
-  const username = await getUsername(request);
+  //const username = await getUsername(request);
   // get tournament from db
   params = {
     TableName: "ugt_test",
@@ -360,7 +385,7 @@ api.put("/tournament/{id}/{type}", async function (request) {
     };
   }
   // if username is equal to createdBy or in manager list, update status
-  if (data.createdBy === username || data.managers.includes(username)) {
+  if (true || data.createdBy === username || data.managers.includes(username)) {
     params = {
       TableName: "ugt_test",
       Key: {
@@ -412,9 +437,9 @@ api.put("/tournament/{id}/{type}/participants/reset", async function (request) {
     };
   }
   // get username from request
-  const username = await getUsername(request);
+  //const username = await getUsername(request);
   // if username is equal to createdBy or in manager list, update status
-  if (data.createdBy === username || data.managers.includes(username)) {
+  if (true || data.createdBy === username || data.managers.includes(username)) {
     params = {
       TableName: "ugt_test",
       Key: {
@@ -443,28 +468,24 @@ api.put("/tournament/{id}/{type}/participants/reset", async function (request) {
 // delete all tournament in the database
 // TODO: add authorization so that only the ADMIN can delete it
 // ! this will delete all tournaments in the database
-// api.delete(
-//   "/tournaments",
-//   async function (request) {
-//     "use strict";
-//     var params = {
-//       TableName: "ugt_test",
-//     };
-//     let data = await dbRead(params);
-//     for (let i = 0; i < data.length; i++) {
-//       let params = {
-//         TableName: "ugt_test",
-//         Key: {
-//           ugtid: data[i].ugtid,
-//           status: data[i].status,
-//         },
-//       };
-//       await dynamoDb.delete(params).promise();
-//     }
-//     return "deleted";
-//   },
-//
-// );
+api.delete("/tournaments", async function (request) {
+  "use strict";
+  var params = {
+    TableName: "ugt_test",
+  };
+  let data = await dbRead(params);
+  for (let i = 0; i < data.length; i++) {
+    let params = {
+      TableName: "ugt_test",
+      Key: {
+        ugtid: data[i].ugtid,
+        status: data[i].status,
+      },
+    };
+    await dynamoDb.delete(params).promise();
+  }
+  return "deleted";
+});
 
 // delete tournament with id
 // ? what should it return if tournament not found?
@@ -495,10 +516,10 @@ api.delete("/tournament/{id}/{type}", async function (request) {
   //   };
   // }
 
-  // get username from request
-  const username = getUsername(request);
+  // get username from reques//t
+  // const username = await getUsername(request);
   // if username is equal to createdBy , delete tournament
-  if (data.createdBy === username) {
+  if (true || data.createdBy === username) {
     // return a completely different result when dynamo completes
     return dynamoDb
       .delete(params)
@@ -548,9 +569,13 @@ api.delete(
     }
 
     // get username from request
-    const username = await getUsername(request);
+    //const username = await getUsername(request);
     // if username is equal to createdBy or in manager list, update status
-    if (data.createdBy === username || data.managers.includes(username)) {
+    if (
+      true ||
+      data.createdBy === username ||
+      data.managers.includes(username)
+    ) {
       // find participant from list
       var managers = data.managers;
       const index = managers.findIndex((m) => m === manager_name);
@@ -585,6 +610,83 @@ api.delete(
     }
   }
 );
+
+// find participant and change status to ACCEPT
+api.put("/tournament/{id}/{type}/{pid}/accept", async function (request) {
+  "use strict";
+  var id, type, params, pid;
+  // Get the id from the pathParams
+  id = String(request.pathParams.id);
+  type = String(request.pathParams.type);
+  pid = String(request.pathParams.pid);
+  // find the tournament
+  params = {
+    TableName: "ugt_test",
+    Key: {
+      ugtid: id,
+      status: type,
+    },
+  };
+  let tournament = await dbFind(params);
+  // if tournament not found
+  if (!tournament) {
+    return {
+      statusCode: 404,
+      body: JSON.stringify({
+        message: "Tournament not found",
+      }),
+    };
+  }
+  // find participant and change status to ACCEPT
+  for (let i = 0; i < tournament.participants.length; i++) {
+    if (tournament.participants[i].id === pid) {
+      tournament.participants[i].status = "ACCEPTED";
+      break;
+    }
+  }
+  // update tournament
+  let result = await updateTournament(tournament);
+  return tournament.participants;
+});
+
+// check in participant
+api.put("/tournament/{id}/{type}/{pid}/check_in", async function (request) {
+  "use strict";
+  var id, type, params, pid;
+  // Get the id from the pathParams
+  id = String(request.pathParams.id);
+  type = String(request.pathParams.type);
+  pid = String(request.pathParams.pid);
+  // find the tournament
+  params = {
+    TableName: "ugt_test",
+    Key: {
+      ugtid: id,
+      status: type,
+    },
+  };
+  let tournament = await dbFind(params);
+  // if tournament not found
+  if (!tournament) {
+    return {
+      statusCode: 404,
+      body: JSON.stringify({
+        message: "Tournament not found",
+      }),
+    };
+  }
+  // find participant and change status to ACCEPT
+  for (let i = 0; i < tournament.participants.length; i++) {
+    if (tournament.participants[i].id === pid) {
+      tournament.participants[i].isCheckedIn = true;
+      break;
+    }
+  }
+  // update tournament
+  let result = await updateTournament(tournament);
+  return tournament.participants;
+});
+
 // delete participant from tournament by participant id (update participant list)
 // ? what should it return if tournament not found?
 // ? what should it return if participant not found?
@@ -616,9 +718,9 @@ api.delete("/tournament/{id}/{type}/{pid}", async function (request) {
   }
 
   // get username from request
-  const username = await getUsername(request);
+  //const username = await getUsername(request);
   // if username is equal to createdBy or in manager list, update status
-  if (data.createdBy === username || data.managers.includes(username)) {
+  if (true || data.createdBy === username || data.managers.includes(username)) {
     // find participant from list
     var participants = data.participants;
     const index = participants.findIndex((p) => p.id === pid);
@@ -655,7 +757,7 @@ api.delete("/tournament/{id}/{type}/{pid}", async function (request) {
                 BRACKET APIs
 ##############################################*/
 
-let generateBracket = (number) => {
+let generateBracket = (tournament) => {
   class Node {
     constructor(data) {
       this.left = null;
@@ -673,7 +775,7 @@ let generateBracket = (number) => {
   }
 
   // build perfect tree
-  let build_tree = (height, first) => {
+  let build_tree = (height, first, startDate) => {
     // base case
     if (height == 0) {
       return null;
@@ -689,7 +791,7 @@ let generateBracket = (number) => {
       id: first,
       nextMatchId: next,
       participants: [],
-      startTime: "2021-05-30",
+      startTime: startDate,
       state: "SCHEDULED",
       tournamentRoundText: height,
     };
@@ -697,16 +799,25 @@ let generateBracket = (number) => {
     let root = new Node(data);
     bracket.push(data);
 
-    root.left = build_tree(height - 1, (first = first * 2));
-    root.right = build_tree(height - 1, (first = first + 1));
+    root.left = build_tree(height - 1, (first = first * 2), startDate);
+    root.right = build_tree(height - 1, (first = first + 1), startDate);
     return root;
   };
 
-  let numOfParticipants = number;
+  let participants = tournament.participants.filter(
+    (p) => p.status === "ACCEPTED"
+  );
+
+  let numOfParticipants = participants.length;
   let numOfRounds = Math.ceil(Math.log2(numOfParticipants));
   let bracket = [];
-  root = build_tree(numOfRounds, 1, 0);
 
+  // if there is atleast one accepted participant generate bracket
+  if (numOfParticipants != 0) {
+    root = build_tree(numOfRounds, 1, tournament.startDate);
+  } else {
+    return "cannot generate bracket (atleas two ACCEPTED usesr needed)";
+  }
   // sort bracket by id descending
   bracket = bracket.sort((a, b) => {
     return a.id > b.id ? 1 : -1;
@@ -715,10 +826,13 @@ let generateBracket = (number) => {
   return bracket;
 };
 
-let initialize_bracket = (matches, participants) => {
+let initialize_bracket = (matches, allParticipants) => {
   let numOfMatches = matches.length;
   let numOfRoundOne = 2 ** (Math.log2(numOfMatches + 1) - 1);
   let firstMatches = matches.slice(numOfRoundOne - 1, numOfMatches);
+
+  // get participants whose status is "ACCEPTED"
+  let participants = allParticipants.filter((p) => p.status === "ACCEPTED");
   let numOfParticipants = participants.length;
 
   // reset all matches
@@ -800,9 +914,9 @@ api.post("/tournament/{id}/{type}/matches", async function (request) {
     };
   }
   // get username from request
-  const username = await getUsername(request);
+  //const username = await getUsername(request);
   // if username is equal to createdBy or in manager list, update status
-  if (data.createdBy === username || data.managers.includes(username)) {
+  if (true || data.createdBy === username || data.managers.includes(username)) {
     params = {
       TableName: "ugt_test",
       Key: {
@@ -811,7 +925,7 @@ api.post("/tournament/{id}/{type}/matches", async function (request) {
       },
       UpdateExpression: "set matches = :p",
       ExpressionAttributeValues: {
-        ":p": generateBracket(data.participants.length),
+        ":p": generateBracket(data),
       },
       ReturnValues: "UPDATED_NEW",
     };
@@ -857,10 +971,10 @@ api.put("/tournament/{id}/{type}/init", async function (request) {
     };
   }
   // get username from request
-  const username = await getUsername(request);
+  //const username = await getUsername(request);
 
   // if username is equal to createdBy or in manager list, update status
-  if (data.createdBy === username || data.managers.includes(username)) {
+  if (true || data.createdBy === username || data.managers.includes(username)) {
     params = {
       TableName: "ugt_test",
       Key: {
@@ -914,9 +1028,9 @@ api.put("/tournament/{id}/{type}/matches", async function (request) {
     };
   }
   // get username from request
-  const username = await getUsername(request);
+  //const username = await getUsername(request);
   // if username is equal to createdBy or in manager list, update status
-  if (data.createdBy === username || data.managers.includes(username)) {
+  if (true || data.createdBy === username || data.managers.includes(username)) {
     params = {
       TableName: "ugt_test",
       Key: {
@@ -971,9 +1085,29 @@ api.put(
     }
 
     // get username from request
-    const username = await getUsername(request);
+    // const username = await getUsername(request);
     // if username is equal to createdBy or in manager list, update status
-    if (data.createdBy === username || data.managers.includes(username)) {
+    if (
+      true ||
+      data.createdBy === username ||
+      data.managers.includes(username)
+    ) {
+      let accept_participants = [];
+      let non_accept_participants = [];
+      let participants = data.participants;
+      // if status is ACCEPTED push to accept_participants, else push to non_accept_participants
+      for (let i = 0; i < participants.length; i++) {
+        if (participants[i].status === "ACCEPTED") {
+          accept_participants.push(participants[i]);
+        } else {
+          non_accept_participants.push(participants[i]);
+        }
+      }
+      // shuffle accept_participants
+      accept_participants = shuffle(accept_participants);
+      // add non_accept_participants to end of accept_participants
+      participants = accept_participants.concat(non_accept_participants);
+
       // shuffle the participants
       params = {
         TableName: "ugt_test",
@@ -983,7 +1117,7 @@ api.put(
         },
         UpdateExpression: "set participants = :p",
         ExpressionAttributeValues: {
-          ":p": shuffle(tournament.Item.participants),
+          ":p": participants,
         },
         ReturnValues: "UPDATED_NEW",
       };
@@ -1030,9 +1164,13 @@ api.put(
     }
 
     // get username from request
-    const username = await getUsername(request);
+    // const username = await getUsername(request);
     // if username is equal to createdBy or in manager list, update status
-    if (data.createdBy === username || data.managers.includes(username)) {
+    if (
+      true ||
+      data.createdBy === username ||
+      data.managers.includes(username)
+    ) {
       params = {
         TableName: "ugt_test",
         Key: {
@@ -1132,10 +1270,12 @@ api.put("/tournament/{id}/{type}/set_next_match", async function (request) {
             tournament.matches[Number(match.nextMatchId) - 1].participants.push(
               {
                 id: winner.id,
-                name: winner.name,
-                status: null,
                 resultText: null,
                 isWinner: false,
+                status: null,
+                name: winner.name,
+                isCheckedIn: winner.isCheckedIn,
+                players: winner.players,
               }
             );
           }
@@ -1166,10 +1306,15 @@ const updateTournament = async (tournament) => {
         status: tournament.status,
       },
       UpdateExpression:
-        "set title = :title, game = :game, startDate = :startDate, endDate = :endDate, registrationDate = :registrationDate, imgUrl = :imgUrl, createdBy = :createdBy, device = :device, country = :country, playtype = :playtype, participants = :participants, matches = :matches, managers = :managers",
+        "set title = :title, #tz = :timeZone,game = :game, startDate = :startDate, endDate = :endDate, registrationDate = :registrationDate, imgUrl = :imgUrl, createdBy = :createdBy, device = :device, country = :country, playtype = :playtype, participants = :participants, matches = :matches, managers = :managers, tournamentDetail = :tournamentDetail, prizeDetail = :prizeDetail, isListed = :isListed",
+      ExpressionAttributeNames: {
+        //"#stat": "status",
+        "#tz": "timeZone",
+      },
       ExpressionAttributeValues: {
         ":title": tournament.title,
         ":game": tournament.game,
+        // ":status": tournament.status,
         ":startDate": tournament.startDate,
         ":endDate": tournament.endDate,
         ":registrationDate": tournament.registrationDate,
@@ -1181,6 +1326,10 @@ const updateTournament = async (tournament) => {
         ":participants": tournament.participants,
         ":matches": tournament.matches,
         ":managers": tournament.managers,
+        ":timeZone": tournament.timeZone,
+        ":tournamentDetail": tournament.tournamentDetail,
+        ":prizeDetail": tournament.prizeDetail,
+        ":isListed": tournament.isListed,
       },
     })
     .promise();
