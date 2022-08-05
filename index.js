@@ -71,6 +71,7 @@ api.post("/tournament", async function (request) {
       ugtid: uid(),
       title: request.body.title,
       status: request.body.status,
+      region: request.body.region,
       game: request.body.game, // ?
       tournamentDetail: request.body.tournamentDetail, // ?
       prizeDetail: request.body.prizeDetail, // ?
@@ -192,7 +193,7 @@ api.post("/tournament/{id}/{type}/participant", async function (request) {
           {
             id: uid(),
             name: String(request.body.name),
-            status: "PENDING",
+            status: "ACCEPTED",
             resultText: null,
             isWinner: false,
             isCheckedIn: false,
@@ -408,6 +409,51 @@ api.put("/tournament/{id}/{type}", async function (request) {
       }),
     };
   }
+});
+
+// update prizeDetail of a tournament
+// ? what should it return if tournament not found
+api.put("/tournament/{id}/{type}/prizeDetail", async function (request) {
+  "use strict";
+  var id, type, params;
+  // Get the id from the pathParams
+  id = String(request.pathParams.id);
+  type = String(request.pathParams.type);
+  // get username from request
+  //const username = await getUsername(request);
+  // get tournament from db
+  params = {
+    TableName: "ugt_test",
+    Key: {
+      ugtid: id,
+      status: type,
+    },
+  };
+  let data = await dbFind(params);
+  // if tournament not found
+  if (!data) {
+    return {
+      statusCode: 404,
+      body: JSON.stringify({
+        message: "Tournament not found",
+      }),
+    };
+  }
+
+  params = {
+    TableName: "ugt_test",
+    Key: {
+      ugtid: id,
+      status: type,
+    },
+    UpdateExpression: "set prizeDetail = :p",
+    ExpressionAttributeValues: {
+      ":p": request.body.prizeDetail,
+    },
+    ReturnValues: "UPDATED_NEW",
+  };
+  let result = await dynamoDb.update(params).promise();
+  return result;
 });
 
 // reset participant list of a tournament
