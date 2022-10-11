@@ -77,7 +77,8 @@ api.post("/tournament", async function (request) {
       prizeDetail: request.body.prizeDetail, // ?
       startDate: request.body.startDate,
       endDate: request.body.endDate,
-      registrationDate: request.body.registrationDate,
+      registrationStartDate: request.body.registrationStartDate,
+      registrationEndDate: request.body.registrationEndDate,
       timeZone: request.body.timeZone,
       imgUrl: request.body.imgUrl,
       createdBy: request.body.createdBy,
@@ -1352,7 +1353,7 @@ const updateTournament = async (tournament) => {
         status: tournament.status,
       },
       UpdateExpression:
-        "set title = :title, #tz = :timeZone,game = :game, startDate = :startDate, endDate = :endDate, registrationDate = :registrationDate, imgUrl = :imgUrl, createdBy = :createdBy, device = :device, country = :country, playtype = :playtype, participants = :participants, matches = :matches, managers = :managers, tournamentDetail = :tournamentDetail, prizeDetail = :prizeDetail, isListed = :isListed",
+        "set title = :title, #tz = :timeZone,game = :game, startDate = :startDate, endDate = :endDate, registrationStartDate = :registrationStartDate, registrationEndDate = :registrationEndDate, imgUrl = :imgUrl, createdBy = :createdBy, device = :device, country = :country, playtype = :playtype, participants = :participants, matches = :matches, managers = :managers, tournamentDetail = :tournamentDetail, prizeDetail = :prizeDetail, isListed = :isListed",
       ExpressionAttributeNames: {
         //"#stat": "status",
         "#tz": "timeZone",
@@ -1363,7 +1364,8 @@ const updateTournament = async (tournament) => {
         // ":status": tournament.status,
         ":startDate": tournament.startDate,
         ":endDate": tournament.endDate,
-        ":registrationDate": tournament.registrationDate,
+        ":registrationStartDate": tournament.registrationStartDate,
+        ":registrationEndDate": tournament.registrationEndDate,
         ":imgUrl": tournament.imgUrl,
         ":createdBy": tournament.createdBy,
         ":device": tournament.device,
